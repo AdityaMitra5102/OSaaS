@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'osfiles'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 
-HOSTNAME = 'test.net'
+HOSTNAME = '192.168.1.53:5000'
 DB_FILE = 'enterprise_os.db'
 
 # Ensure upload folder exists
@@ -514,7 +514,10 @@ HTML_TEMPLATE = '''
             
             <div id="user-message"></div>
             
-            <button onclick="createUser()">Create User</button>
+            <div class="action-buttons">
+                <button onclick="saveUser()">Save User</button>
+                <button onclick="clearUserForm()">Clear Form</button>
+            </div>
             
             <div class="user-list">
                 <h3>Existing Users</h3>
@@ -887,6 +890,8 @@ HTML_TEMPLATE = '''
         }
         
         // User management
+        let editingUser = null;
+        
         async function loadOSListForUsers() {
             try {
                 const response = await fetch('/api/os-definitions');
@@ -906,7 +911,25 @@ HTML_TEMPLATE = '''
             }
         }
         
-        async function createUser() {
+        function clearUserForm() {
+            document.getElementById('user-username').value = '';
+            document.getElementById('user-password').value = '';
+            document.getElementById('user-os').value = '';
+            document.getElementById('user-username').disabled = false;
+            editingUser = null;
+        }
+        
+        function editUser(username, assignedOS) {
+            editingUser = username;
+            document.getElementById('user-username').value = username;
+            document.getElementById('user-username').disabled = true;
+            document.getElementById('user-password').value = '';
+            document.getElementById('user-password').placeholder = 'Leave blank to keep current password';
+            document.getElementById('user-os').value = assignedOS || '';
+            window.scrollTo(0, 0);
+        }
+        
+        async function saveUser() {
             const username = document.getElementById('user-username').value.trim();
             const password = document.getElementById('user-password').value;
             const assignedOS = document.getElementById('user-os').value;
@@ -916,35 +939,47 @@ HTML_TEMPLATE = '''
                 return;
             }
             
-            if (!password) {
-                showMessage('user-message', 'Please enter a password', 'error');
+            if (!editingUser && !password) {
+                showMessage('user-message', 'Please enter a password for new user', 'error');
                 return;
             }
             
             try {
-                const response = await fetch('/api/user', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        username: username,
-                        password: password,
-                        assigned_os: assignedOS
-                    })
-                });
+                let response;
+                if (editingUser) {
+                    // Update existing user
+                    response = await fetch('/api/user/' + username, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            password: password || null,
+                            assigned_os: assignedOS
+                        })
+                    });
+                } else {
+                    // Create new user
+                    response = await fetch('/api/user', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: username,
+                            password: password,
+                            assigned_os: assignedOS
+                        })
+                    });
+                }
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    showMessage('user-message', 'User created successfully', 'success');
-                    document.getElementById('user-username').value = '';
-                    document.getElementById('user-password').value = '';
-                    document.getElementById('user-os').value = '';
+                    showMessage('user-message', editingUser ? 'User updated successfully' : 'User created successfully', 'success');
+                    clearUserForm();
                     loadUsers();
                 } else {
                     showMessage('user-message', 'Error: ' + data.message, 'error');
                 }
             } catch (error) {
-                showMessage('user-message', 'Failed to create user: ' + error, 'error');
+                showMessage('user-message', 'Failed to save user: ' + error, 'error');
             }
         }
         
@@ -963,6 +998,7 @@ HTML_TEMPLATE = '''
                         <td>${user.assigned_os || 'None'}</td>
                         <td>${new Date(user.created_date).toLocaleString()}</td>
                         <td>
+                            <button onclick="editUser('${user.username}', '${user.assigned_os || ''}')" style="padding: 6px 12px; margin-right: 5px;">Edit</button>
                             <button onclick="deleteUser('${user.username}')" class="danger" style="padding: 6px 12px;">Delete</button>
                         </td>
                     `;
@@ -1262,6 +1298,35 @@ def delete_user(username):
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute('DELETE FROM users WHERE username = ?', (username,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/user/<username>', methods=['PUT'])
+def update_user(username):
+    data = request.json
+    password = data.get('password')
+    assigned_os = data.get('assigned_os', '')
+    
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        
+        # If password is provided, update it
+        if password:
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            c.execute('''UPDATE users 
+                        SET password_hash = ?, assigned_os = ?
+                        WHERE username = ?''', (password_hash, assigned_os if assigned_os else None, username))
+        else:
+            # Only update assigned OS
+            c.execute('''UPDATE users 
+                        SET assigned_os = ?
+                        WHERE username = ?''', (assigned_os if assigned_os else None, username))
+        
         conn.commit()
         conn.close()
         
