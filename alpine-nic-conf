@@ -1,0 +1,32 @@
+#!/bin/sh
+
+ip link add name br0 type bridge
+ip link set eth0 master br0
+ip link set eth1 master br0
+
+ip link set eth0 up
+ip link set eth1 up
+ip link set br0 up
+
+udhcpc -i br0
+
+apk add dnsmasq
+
+
+intip=$(ip -o -f inet addr show br0 | awk '/scope global/ {print $4}' | cut -d'/' -f1)
+echo $intip
+
+subnet=$(ifconfig br0 | grep Mask | awk '{print $4}' | cut -d':' -f2)
+echo $subnet
+
+echo interface=br0 > /etc/dnsmasq.d/pxe.conf
+echo enable-tftp >> /etc/dnsmasq.d/pxe.conf
+echo tftp-root=/var/lib/tftpboot >> /etc/dnsmasq.d/pxe.conf
+echo port=0 >> /etc/dnsmasq.d/pxe.conf
+echo dhcp-range=$intip,proxy,$subnet >> /etc/dnsmasq.d/pxe.conf
+echo pxe-service=x86PC, \"Network Boot\", sdb.kpxe >> /etc/dnsmasq.d/pxe.conf
+
+rc-service dnsmasq restart
+
+
+
