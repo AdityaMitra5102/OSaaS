@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'osfiles'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 
-HOSTNAME = '192.168.1.53:5000'
+HOSTNAME = 'sdb.mukham.in:5000' #Remember to set DNS
 DB_FILE = 'enterprise_os.db'
 
 # Ensure upload folder exists
