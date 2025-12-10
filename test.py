@@ -1390,6 +1390,7 @@ def get_os():
 menu Welcome to SDB
 item dummy Welcome {username}
 item dummy Booting to {assigned_os}
+item dummy
 item dummy Press Enter to continue
 
 choose choice 
@@ -1407,8 +1408,16 @@ choose choice
     
     # Return error script
     error_script = f"""#!ipxe
-prompt Invalid credentials
+menu Welcome to SDB
+item dummy Invalid credentials
+item dummy Try again
+item dummy
+item dummy Press Enter to continue
+
+choose choice 
+
 chain http://{HOSTNAME}/init"""
+
     return error_script, 200, {'Content-Type': 'text/plain'}
 
 if __name__ == '__main__':
